@@ -1,0 +1,14 @@
+# dcat_ap_se_profile-js:
+#   filter: rjsmin
+#   output: ckanext-dcat_ap_se_profile/%(version)s-dcat_ap_se_profile.js
+#   contents:
+#     - js/dcat_ap_se_profile.js
+#   extra:
+#     preload:
+#       - base/main
+
+# dcat_ap_se_profile-css:
+#   filter: cssrewrite
+#   output: ckanext-dcat_ap_se_profile/%(version)s-dcat_ap_se_profile.css
+#   contents:
+#     - css/dcat_ap_se_profile.css
