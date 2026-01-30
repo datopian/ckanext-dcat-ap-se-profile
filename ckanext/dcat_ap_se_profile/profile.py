@@ -5,11 +5,14 @@ from ckantoolkit import config
 
 from ckanext.dcat.profiles.euro_dcat_ap_3 import EuropeanDCATAP3Profile
 from ckanext.dcat.profiles.base import DCAT, VCARD, OWL, SPDX, RDF, GSP, FOAF, DCT
+from ckanext.dcat.utils import resource_uri
 
 log = logging.getLogger(__name__)
 
 
 DCTERMS = Namespace("http://purl.org/dc/terms/")
+ADMS = Namespace("http://www.w3.org/ns/adms#")
+DCATAP = Namespace("http://data.europa.eu/r5r/")
 
 
 class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
@@ -22,6 +25,8 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
         # Use dcterms instead of dct (DCAT AP SE 3.0)
         self.g.bind("dcterms", DCTERMS)
+        self.g.bind("adms", ADMS)
+        self.g.bind("dcatap", DCATAP)
 
         # Use dcat:version instead of owl:versionInfo
         version = dataset_dict.get("version")
@@ -104,27 +109,34 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                 self.g.add((contact_node, VCARD.hasAddress, Literal(address)))
 
         # Spatial
-        spatial_scheme = self._get_dataset_value(dataset_dict, "spatial_scheme")
+        spatial_scheme_uri = config.get("ckanext.dcat_ap_se_profile.spatial_scheme_uri")
 
-        res_uri = (
-            URIRef(spatial_scheme)
-            if spatial_scheme
-            else URIRef("http://www.geonames.org/2692965/CLIENTe.html")
-        )
-        self.g.add((dataset_ref, DCTERMS.spatial, res_uri))
+        if spatial_scheme_uri:
+            spatial_scheme = self._get_dataset_value(dataset_dict, "spatial_scheme")
 
-        # Geo bounding box (hardcoded example from client)
-        loc_node = BNode()
-        self.g.add((loc_node, RDF.type, DCTERMS.Location))
-        wkt = "POLYGON((12.8850967451 55.6421476735,13.1517619812 55.6421476735,13.1517619812 55.5022773196,12.8850967451 55.5022773196,12.8850967451 55.6421476735))"
-        self.g.add((loc_node, DCAT.bbox, Literal(wkt, datatype=GSP.wktLiteral)))
-        self.g.add((dataset_ref, DCTERMS.spatial, loc_node))
+            res_uri = (
+                URIRef(spatial_scheme)
+                if spatial_scheme
+                else URIRef(spatial_scheme_uri)
+            )
+            self.g.add((dataset_ref, DCTERMS.spatial, res_uri))
+
+        # Geo bounding box (if using global value)
+        geo_wkt = config.get("ckanext.dcat_ap_se_profile.geo_wkt")
+
+        if geo_wkt:
+            loc_node = BNode()
+            self.g.add((loc_node, RDF.type, DCTERMS.Location))
+            wkt = geo_wkt.strip()
+            self.g.add((loc_node, DCAT.bbox, Literal(wkt, datatype=GSP.wktLiteral)))
+            self.g.add((dataset_ref, DCTERMS.spatial, loc_node))
 
         # Distributions (resources)
         for resource_dict in dataset_dict.get("resources", []):
-            dist_uri = self._get_resource_value(resource_dict, "uri")
+            dist_uri = resource_uri(resource_dict)
 
             if not dist_uri:
+                log.error("Resource URI could not be determined for resource %s", resource_dict.get("id"))
                 continue
 
             dist_ref = URIRef(dist_uri)
@@ -134,14 +146,41 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
             if mimetype:
                 self.g.remove((dist_ref, DCAT.mediaType, None))
-                self.g.add((dist_ref, DCTERMS.format, Literal(mimetype)))
+                self.g.add((dist_ref, DCTERMS["format"], Literal(mimetype)))
+
+            status = resource_dict.get("status")
+
+            if status:
+                # Status has changed to EU Publications Office URIs in AP SE 3.0
+                status_mapping = {
+                    "http://purl.org/adms/status/completed": "http://publications.europa.eu/resource/authority/dataset-status/COMPLETED",
+                    "http://purl.org/adms/status/deprecated": "http://publications.europa.eu/resource/authority/dataset-status/DEPRECATED",
+                    "http://purl.org/adms/status/underdevelopment": "http://publications.europa.eu/resource/authority/dataset-status/UNDER_DEVELOPMENT",
+                    "http://purl.org/adms/status/withdrawn": "http://publications.europa.eu/resource/authority/dataset-status/WITHDRAWN",
+                }
+                mapped_url = status_mapping.get(status.lower())
+
+                if mapped_url:
+                    self.g.remove((dist_ref, ADMS.status, None))
+                    self.g.add((dist_ref, ADMS.status, URIRef(mapped_url)))
+
+            # Availability
+            availability = resource_dict.get("availability")
+
+            if availability:
+                val = URIRef(availability) if availability.startswith("http") else Literal(availability)
+                self.g.add((dist_ref, DCATAP.availability, val))
 
             # Remove dcterms:rights (not used in DCAT AP SE 3.0)
             self.g.remove((dist_ref, DCTERMS.rights, None))
 
             # SPDX checksum
-            if resource_dict.get("hash"):
+            hash_val = resource_dict.get("hash")
+
+            if hash_val:
                 for cs in self.g.objects(dist_ref, SPDX.checksum):
+                    self.g.add((cs, RDF.type, SPDX.Checksum))
+                    self.g.add((cs, SPDX.checksumValue, Literal(hash_val)))
                     self.g.add(
                         (
                             cs,
