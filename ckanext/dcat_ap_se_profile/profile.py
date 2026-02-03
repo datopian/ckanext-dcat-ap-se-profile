@@ -1,5 +1,5 @@
 import logging
-from rdflib import Literal, BNode, URIRef, Namespace
+from rdflib import Literal, BNode, URIRef, Namespace, XSD
 
 from ckantoolkit import config
 
@@ -146,6 +146,7 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
             if mimetype:
                 self.g.remove((dist_ref, DCAT.mediaType, None))
+                self.g.remove((dist_ref, DCT.format, None))
                 self.g.add((dist_ref, DCTERMS["format"], Literal(mimetype)))
 
             status = resource_dict.get("status")
@@ -153,10 +154,10 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             if status:
                 # Status has changed to EU Publications Office URIs in AP SE 3.0
                 status_mapping = {
-                    "http://purl.org/adms/status/completed": "http://publications.europa.eu/resource/authority/dataset-status/COMPLETED",
-                    "http://purl.org/adms/status/deprecated": "http://publications.europa.eu/resource/authority/dataset-status/DEPRECATED",
-                    "http://purl.org/adms/status/underdevelopment": "http://publications.europa.eu/resource/authority/dataset-status/UNDER_DEVELOPMENT",
-                    "http://purl.org/adms/status/withdrawn": "http://publications.europa.eu/resource/authority/dataset-status/WITHDRAWN",
+                    "http://purl.org/adms/status/completed": "http://publications.europa.eu/resource/authority/distribution-status/COMPLETED",
+                    "http://purl.org/adms/status/deprecated": "http://publications.europa.eu/resource/authority/distribution-status/DEPRECATED",
+                    "http://purl.org/adms/status/underdevelopment": "http://publications.europa.eu/resource/authority/distribution-status/UNDER_DEVELOPMENT",
+                    "http://purl.org/adms/status/withdrawn": "http://publications.europa.eu/resource/authority/distribution-status/WITHDRAWN",
                 }
                 mapped_url = status_mapping.get(status.lower())
 
@@ -178,9 +179,11 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             hash_val = resource_dict.get("hash")
 
             if hash_val:
-                for cs in self.g.objects(dist_ref, SPDX.checksum):
+                for cs in list(self.g.objects(dist_ref, SPDX.checksum)):
+                    self.g.remove((cs, None, None))
+
                     self.g.add((cs, RDF.type, SPDX.Checksum))
-                    self.g.add((cs, SPDX.checksumValue, Literal(hash_val)))
+                    self.g.add((cs, SPDX.checksumValue, Literal(hash_val, datatype=XSD.string)))
                     self.g.add(
                         (
                             cs,
