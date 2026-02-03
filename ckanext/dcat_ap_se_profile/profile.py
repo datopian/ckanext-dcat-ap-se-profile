@@ -143,6 +143,7 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
             self.g.remove((dist_ref, DCAT.mediaType, None))
             self.g.remove((dist_ref, DCT.format, None))
+            self.g.remove((dist_ref, DCTERMS["format"], None))
 
             # Use dcterms:format instead of dcat:mediaType
             mimetype = resource_dict.get("mimetype")
