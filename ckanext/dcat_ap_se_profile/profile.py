@@ -141,12 +141,13 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
             dist_ref = URIRef(dist_uri)
 
+            self.g.remove((dist_ref, DCAT.mediaType, None))
+            self.g.remove((dist_ref, DCT.format, None))
+
             # Use dcterms:format instead of dcat:mediaType
             mimetype = resource_dict.get("mimetype")
 
             if mimetype:
-                self.g.remove((dist_ref, DCAT.mediaType, None))
-                self.g.remove((dist_ref, DCT.format, None))
                 self.g.add((dist_ref, DCTERMS["format"], Literal(mimetype)))
 
             status = resource_dict.get("status")
