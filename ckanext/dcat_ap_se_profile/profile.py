@@ -23,6 +23,11 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
     def graph_from_dataset(self, dataset_dict, dataset_ref):
         super(SwedishDCATAP3Profile, self).graph_from_dataset(dataset_dict, dataset_ref)
 
+        # Remove empty conformsTo nodes (title, descriptions, etc.)
+        for standard_node in list(self.g.objects(None, DCT.conformsTo)):
+            self.g.remove((standard_node, None, None))
+            self.g.remove((None, None, standard_node))
+
         # Use dcterms instead of dct (DCAT AP SE 3.0)
         self.g.bind("dcterms", DCTERMS)
         self.g.bind("adms", ADMS)
@@ -101,12 +106,28 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             phone = self._get_dataset_value(dataset_dict, "contact_point_phone")
 
             if phone:
-                self.g.add((contact_node, VCARD.hasTelephone, Literal(phone)))
+                tele_node = BNode()
+                self.g.add((contact_node, VCARD.hasTelephone, tele_node))
+                self.g.add((tele_node, RDF.type, VCARD.Voice))
+
+                digits = ''.join(filter(str.isdigit, phone))
+
+                if digits.startswith('00'):
+                    formatted = f"+{digits[2:]}"
+                elif digits.startswith('0') and not digits.startswith('00'):
+                    formatted = f"+46{digits[1:]}" # Default to Sweden country code
+                else:
+                    formatted = f"+{digits}"
+
+                self.g.add((tele_node, VCARD.hasValue, URIRef(f"tel:{formatted}")))
 
             address = self._get_dataset_value(dataset_dict, "contact_point_address")
 
             if address:
-                self.g.add((contact_node, VCARD.hasAddress, Literal(address)))
+                addr_node = BNode()
+                self.g.add((contact_node, VCARD.hasAddress, addr_node))
+                self.g.add((addr_node, RDF.type, VCARD.Address))
+                self.g.add((addr_node, VCARD["street-address"], Literal(address)))
 
         # Spatial
         spatial_scheme_uri = config.get("ckanext.dcat_ap_se_profile.spatial_scheme_uri")
@@ -158,7 +179,7 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                 status_mapping = {
                     "http://purl.org/adms/status/completed": "http://publications.europa.eu/resource/authority/distribution-status/COMPLETED",
                     "http://purl.org/adms/status/deprecated": "http://publications.europa.eu/resource/authority/distribution-status/DEPRECATED",
-                    "http://purl.org/adms/status/underdevelopment": "http://publications.europa.eu/resource/authority/distribution-status/UNDER_DEVELOPMENT",
+                    "http://purl.org/adms/status/underdevelopment": "http://publications.europa.eu/resource/authority/distribution-status/DEVELOP",
                     "http://purl.org/adms/status/withdrawn": "http://publications.europa.eu/resource/authority/distribution-status/WITHDRAWN",
                 }
                 mapped_url = status_mapping.get(status.lower())
@@ -196,6 +217,16 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
     def graph_from_catalog(self, catalog_dict, catalog_ref):
         super(SwedishDCATAP3Profile, self).graph_from_catalog(catalog_dict, catalog_ref)
+
+        self.g.remove((catalog_ref, DCT.language, None))
+        self.g.add((catalog_ref, DCT.language, URIRef("http://publications.europa.eu/resource/authority/language/SWE")))
+
+        catalog_description_sv = config.get("ckanext.dcat_ap_se_profile.catalog_description_sv")
+        catalog_description_en = config.get("ckanext.dcat_ap_se_profile.catalog_description_en")
+
+        self.g.remove((catalog_ref, DCT.description, None))
+        self.g.add((catalog_ref, DCT.description, Literal(catalog_description_sv or "Metadatakatalog", lang="sv")))
+        self.g.add((catalog_ref, DCT.description, Literal(catalog_description_en or "Metadata catalogue", lang="en")))
 
         # Set catalog level publisher to env variable values (if all exist):
         # ckanext.dcat_ap_se_profile.publisher_name=<PUBLISHER_NAME>
