@@ -23,11 +23,6 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
     def graph_from_dataset(self, dataset_dict, dataset_ref):
         super(SwedishDCATAP3Profile, self).graph_from_dataset(dataset_dict, dataset_ref)
 
-        # Remove empty conformsTo nodes (title, descriptions, etc.)
-        for standard_node in list(self.g.objects(None, DCT.conformsTo)):
-            self.g.remove((standard_node, None, None))
-            self.g.remove((None, None, standard_node))
-
         # Use dcterms instead of dct (DCAT AP SE 3.0)
         self.g.bind("dcterms", DCTERMS)
         self.g.bind("adms", ADMS)
@@ -152,6 +147,9 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             self.g.add((loc_node, DCAT.bbox, Literal(wkt, datatype=GSP.wktLiteral)))
             self.g.add((dataset_ref, DCTERMS.spatial, loc_node))
 
+        # Remove existing nested nodes if necessary
+        self.g.remove((dataset_ref, FOAF.page, None))
+
         # Distributions (resources)
         for resource_dict in dataset_dict.get("resources", []):
             dist_uri = resource_uri(resource_dict)
@@ -165,6 +163,13 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             self.g.remove((dist_ref, DCAT.mediaType, None))
             self.g.remove((dist_ref, DCT.format, None))
             self.g.remove((dist_ref, DCTERMS["format"], None))
+            self.g.remove((dist_ref, FOAF.page, None))
+
+            documentation = resource_dict.get("documentation")
+
+            if documentation and documentation.startswith("http"):
+                # Add as a direct URIRef
+                self.g.add((dist_ref, FOAF.page, URIRef(documentation)))
 
             # Use dcterms:format instead of dcat:mediaType
             mimetype = resource_dict.get("mimetype")
@@ -214,6 +219,20 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                             URIRef("http://spdx.org/rdf/terms#checksumAlgorithm_sha1"),
                         )
                     )
+
+        # Remove empty conformsTo nodes (title, descriptions, etc.)
+        for standard_node in list(self.g.objects(None, DCT.conformsTo)):
+            if isinstance(standard_node, BNode):
+                if not list(self.g.predicate_objects(standard_node)):
+                    self.g.remove((None, DCT.conformsTo, standard_node))
+                    self.g.remove((standard_node, None, None))
+
+        # Remove empty FOAF.Document nodes (if no page, title, etc.)
+        for doc_node in list(self.g.subjects(RDF.type, FOAF.Document)):
+            if isinstance(doc_node, URIRef):
+                if len(list(self.g.predicate_objects(doc_node))) <= 1:
+                    self.g.remove((doc_node, RDF.type, FOAF.Document))
+
 
     def graph_from_catalog(self, catalog_dict, catalog_ref):
         super(SwedishDCATAP3Profile, self).graph_from_catalog(catalog_dict, catalog_ref)
