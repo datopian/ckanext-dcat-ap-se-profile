@@ -59,6 +59,8 @@ You can also set default publisher information to be used in the RDF output (ins
     ckanext.dcat_ap_se_profile.spatial_scheme_uri = <SPATIAL_SCHEME_URI>
     ckanext.dcat_ap_se_profile.catalog_description_sv = <CATALOG_DESCRIPTION_SV>
     ckanext.dcat_ap_se_profile.catalog_description_en = <CATALOG_DESCRIPTION_EN>
+    ckanext.dcat_ap_se_profile.catalog_title_sv = <CATALOG_TITLE_SV>
+    ckanext.dcat_ap_se_profile.catalog_title_en = <CATALOG_TITLE_EN>
 
 
 ## Developer installation

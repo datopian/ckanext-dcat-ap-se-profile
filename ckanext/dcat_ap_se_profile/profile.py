@@ -46,6 +46,12 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             "ckanext.dcat_ap_se_profile.publisher_identifier"
         )
 
+        if publisher_url and not publisher_url.endswith('/'):
+            publisher_url += '/'
+
+        if publisher_identifier and not publisher_identifier.endswith('/'):
+            publisher_identifier += '/'
+
         if publisher_name and publisher_url and publisher_identifier:
             self.g.remove((dataset_ref, DCT.publisher, None))
 
@@ -242,10 +248,16 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
         catalog_description_sv = config.get("ckanext.dcat_ap_se_profile.catalog_description_sv")
         catalog_description_en = config.get("ckanext.dcat_ap_se_profile.catalog_description_en")
+        catalog_title_sv = config.get("ckanext.dcat_ap_se_profile.catalog_title_sv")
+        catalog_title_en = config.get("ckanext.dcat_ap_se_profile.catalog_title_en")
 
         self.g.remove((catalog_ref, DCT.description, None))
         self.g.add((catalog_ref, DCT.description, Literal(catalog_description_sv or "Metadatakatalog", lang="sv")))
         self.g.add((catalog_ref, DCT.description, Literal(catalog_description_en or "Metadata catalogue", lang="en")))
+
+        self.g.remove((catalog_ref, DCT.title, None))
+        self.g.add((catalog_ref, DCT.title, Literal(catalog_title_sv or "Metadatakatalog", lang="sv")))
+        self.g.add((catalog_ref, DCT.title, Literal(catalog_title_en or "Metadata catalogue", lang="en")))
 
         # Set catalog level publisher to env variable values (if all exist):
         # ckanext.dcat_ap_se_profile.publisher_name=<PUBLISHER_NAME>
@@ -256,6 +268,12 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
         publisher_identifier = config.get(
             "ckanext.dcat_ap_se_profile.publisher_identifier"
         )
+
+        if publisher_url and not publisher_url.endswith('/'):
+            publisher_url += '/'
+
+        if publisher_identifier and not publisher_identifier.endswith('/'):
+            publisher_identifier += '/'
 
         if publisher_name and publisher_url and publisher_identifier:
             # Remove all existing agents
