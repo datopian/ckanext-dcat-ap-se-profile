@@ -52,6 +52,7 @@ To use the DCAT AP 3 SE profile, add the following line to your CKAN config file
     ckanext.dcat.rdf.profiles = dcat_ap_3_se_profile
 
 You can also set default publisher information to be used in the RDF output (instead of the dataset organization):
+
     ckanext.dcat_ap_se_profile.publisher_name = <PUBLISHER_NAME>
     ckanext.dcat_ap_se_profile.publisher_url = <PUBLISHER_URL>
     ckanext.dcat_ap_se_profile.publisher_identifier = <PUBLISHER_IDENTIFIER>
