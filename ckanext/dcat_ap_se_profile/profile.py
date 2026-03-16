@@ -3,6 +3,8 @@ from rdflib import Literal, BNode, URIRef, Namespace, XSD
 
 from ckantoolkit import config
 
+from ckan import model
+
 from ckanext.dcat.profiles.euro_dcat_ap_3 import EuropeanDCATAP3Profile
 from ckanext.dcat.profiles.base import DCAT, VCARD, OWL, SPDX, RDF, GSP, FOAF, DCT
 from ckanext.dcat.utils import resource_uri
@@ -13,6 +15,8 @@ log = logging.getLogger(__name__)
 DCTERMS = Namespace("http://purl.org/dc/terms/")
 ADMS = Namespace("http://www.w3.org/ns/adms#")
 DCATAP = Namespace("http://data.europa.eu/r5r/")
+
+CATALOG_LICENSE = "http://creativecommons.org/publicdomain/zero/1.0"
 
 
 class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
@@ -46,29 +50,38 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             "ckanext.dcat_ap_se_profile.publisher_identifier"
         )
 
-        if publisher_url and not publisher_url.endswith('/'):
-            publisher_url += '/'
+        if publisher_url and not publisher_url.endswith("/"):
+            publisher_url += "/"
 
-        if publisher_identifier and not publisher_identifier.endswith('/'):
-            publisher_identifier += '/'
+        if publisher_identifier and not publisher_identifier.endswith("/"):
+            publisher_identifier += "/"
 
         if publisher_name and publisher_url and publisher_identifier:
             self.g.remove((dataset_ref, DCT.publisher, None))
+            self.g.remove((dataset_ref, DCTERMS.publisher, None))
 
-            org_agents = [a for a in self.g.subjects(RDF.type, FOAF.Agent) if '/organization/' in str(a)]
+            org_agents = [
+                a
+                for a in self.g.subjects(RDF.type, FOAF.Agent)
+                if "/organization/" in str(a)
+            ]
+
             for org in org_agents:
                 self.g.remove((org, None, None))
                 self.g.remove((None, None, org))
 
-            publisher_node = BNode()
+            publisher_node = URIRef(publisher_identifier)
+
             self.g.add((dataset_ref, DCTERMS.publisher, publisher_node))
-            self.g.add((publisher_node, RDF.type, VCARD.Agent))
-            self.g.add((publisher_node, VCARD.fn, Literal(publisher_name)))
+            self.g.add((publisher_node, RDF.type, FOAF.Agent))
+            self.g.add((publisher_node, FOAF.name, Literal(publisher_name)))
+            self.g.add((publisher_node, FOAF.homepage, URIRef(publisher_url)))
             self.g.add(
-                (publisher_node, VCARD.hasURL, URIRef(publisher_url))
-            )
-            self.g.add(
-                (publisher_node, VCARD.identifier, URIRef(publisher_identifier))
+                (
+                    publisher_node,
+                    DCTERMS.type,
+                    URIRef("http://purl.org/adms/publishertype/LocalAuthority"),
+                )
             )
 
         # Retrieve contact_point_* metadata
@@ -92,7 +105,9 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
 
             # Default to Organization if not specified or invalid. TODO: Verify if this is the desired default.
             v_type = (
-                VCARD.Organization if contact_type == "organization" else VCARD.Individual
+                VCARD.Organization
+                if contact_type == "organization"
+                else VCARD.Individual
             )
 
             self.g.add((contact_node, RDF.type, v_type))
@@ -102,7 +117,9 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             email = self._get_dataset_value(dataset_dict, "contact_point_email")
 
             if email:
-                self.g.add((contact_node, VCARD.hasEmail, URIRef(self._add_mailto(email))))
+                self.g.add(
+                    (contact_node, VCARD.hasEmail, URIRef(self._add_mailto(email)))
+                )
 
             phone = self._get_dataset_value(dataset_dict, "contact_point_phone")
 
@@ -111,12 +128,12 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                 self.g.add((contact_node, VCARD.hasTelephone, tele_node))
                 self.g.add((tele_node, RDF.type, VCARD.Voice))
 
-                digits = ''.join(filter(str.isdigit, phone))
+                digits = "".join(filter(str.isdigit, phone))
 
-                if digits.startswith('00'):
+                if digits.startswith("00"):
                     formatted = f"+{digits[2:]}"
-                elif digits.startswith('0') and not digits.startswith('00'):
-                    formatted = f"+46{digits[1:]}" # Default to Sweden country code
+                elif digits.startswith("0") and not digits.startswith("00"):
+                    formatted = f"+46{digits[1:]}"  # Default to Sweden country code
                 else:
                     formatted = f"+{digits}"
 
@@ -137,9 +154,7 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             spatial_scheme = self._get_dataset_value(dataset_dict, "spatial_scheme")
 
             res_uri = (
-                URIRef(spatial_scheme)
-                if spatial_scheme
-                else URIRef(spatial_scheme_uri)
+                URIRef(spatial_scheme) if spatial_scheme else URIRef(spatial_scheme_uri)
             )
             self.g.add((dataset_ref, DCTERMS.spatial, res_uri))
 
@@ -156,12 +171,28 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
         # Remove existing nested nodes if necessary
         self.g.remove((dataset_ref, FOAF.page, None))
 
+        license_id = dataset_dict.get("license_id")
+        license_url = None
+
+        if license_id:
+            try:
+                register = model.Package.get_license_register()
+                license_obj = register.get(license_id)
+
+                if license_obj and license_obj.url:
+                    license_url = license_obj.url
+            except Exception:
+                license_url = dataset_dict.get("license_url")
+
         # Distributions (resources)
         for resource_dict in dataset_dict.get("resources", []):
             dist_uri = resource_uri(resource_dict)
 
             if not dist_uri:
-                log.error("Resource URI could not be determined for resource %s", resource_dict.get("id"))
+                log.error(
+                    "Resource URI could not be determined for resource %s",
+                    resource_dict.get("id"),
+                )
                 continue
 
             dist_ref = URIRef(dist_uri)
@@ -170,6 +201,17 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             self.g.remove((dist_ref, DCT.format, None))
             self.g.remove((dist_ref, DCTERMS["format"], None))
             self.g.remove((dist_ref, FOAF.page, None))
+
+            self.g.remove((dist_ref, DCTERMS.license, None))
+
+            # Set resource license to dataset license URL if exists, otherwise use global catalog license
+            resource_license = (
+                license_url
+                if (license_url and str(license_url).startswith("http"))
+                else CATALOG_LICENSE
+            )
+
+            self.g.add((dist_ref, DCTERMS.license, URIRef(resource_license)))
 
             documentation = resource_dict.get("documentation")
 
@@ -203,7 +245,11 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             availability = resource_dict.get("availability")
 
             if availability:
-                val = URIRef(availability) if availability.startswith("http") else Literal(availability)
+                val = (
+                    URIRef(availability)
+                    if availability.startswith("http")
+                    else Literal(availability)
+                )
                 self.g.add((dist_ref, DCATAP.availability, val))
 
             # Remove dcterms:rights (not used in DCAT AP SE 3.0)
@@ -217,7 +263,9 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                     self.g.remove((cs, None, None))
 
                     self.g.add((cs, RDF.type, SPDX.Checksum))
-                    self.g.add((cs, SPDX.checksumValue, Literal(hash_val, datatype=XSD.string)))
+                    self.g.add(
+                        (cs, SPDX.checksumValue, Literal(hash_val, datatype=XSD.string))
+                    )
                     self.g.add(
                         (
                             cs,
@@ -239,25 +287,58 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
                 if len(list(self.g.predicate_objects(doc_node))) <= 1:
                     self.g.remove((doc_node, RDF.type, FOAF.Document))
 
-
     def graph_from_catalog(self, catalog_dict, catalog_ref):
         super(SwedishDCATAP3Profile, self).graph_from_catalog(catalog_dict, catalog_ref)
 
         self.g.remove((catalog_ref, DCT.language, None))
-        self.g.add((catalog_ref, DCT.language, URIRef("http://publications.europa.eu/resource/authority/language/SWE")))
+        self.g.add(
+            (
+                catalog_ref,
+                DCT.language,
+                URIRef("http://publications.europa.eu/resource/authority/language/SWE"),
+            )
+        )
 
-        catalog_description_sv = config.get("ckanext.dcat_ap_se_profile.catalog_description_sv")
-        catalog_description_en = config.get("ckanext.dcat_ap_se_profile.catalog_description_en")
+        catalog_description_sv = config.get(
+            "ckanext.dcat_ap_se_profile.catalog_description_sv"
+        )
+        catalog_description_en = config.get(
+            "ckanext.dcat_ap_se_profile.catalog_description_en"
+        )
         catalog_title_sv = config.get("ckanext.dcat_ap_se_profile.catalog_title_sv")
         catalog_title_en = config.get("ckanext.dcat_ap_se_profile.catalog_title_en")
 
         self.g.remove((catalog_ref, DCT.description, None))
-        self.g.add((catalog_ref, DCT.description, Literal(catalog_description_sv or "Metadatakatalog", lang="sv")))
-        self.g.add((catalog_ref, DCT.description, Literal(catalog_description_en or "Metadata catalogue", lang="en")))
+        self.g.add(
+            (
+                catalog_ref,
+                DCT.description,
+                Literal(catalog_description_sv or "Metadatakatalog", lang="sv"),
+            )
+        )
+        self.g.add(
+            (
+                catalog_ref,
+                DCT.description,
+                Literal(catalog_description_en or "Metadata catalogue", lang="en"),
+            )
+        )
 
         self.g.remove((catalog_ref, DCT.title, None))
-        self.g.add((catalog_ref, DCT.title, Literal(catalog_title_sv or "Metadatakatalog", lang="sv")))
-        self.g.add((catalog_ref, DCT.title, Literal(catalog_title_en or "Metadata catalogue", lang="en")))
+        self.g.add(
+            (
+                catalog_ref,
+                DCT.title,
+                Literal(catalog_title_sv or "Metadatakatalog", lang="sv"),
+            )
+        )
+        self.g.add(
+            (
+                catalog_ref,
+                DCT.title,
+                Literal(catalog_title_en or "Metadata catalogue", lang="en"),
+            )
+        )
 
         # Set catalog level publisher to env variable values (if all exist):
         # ckanext.dcat_ap_se_profile.publisher_name=<PUBLISHER_NAME>
@@ -269,18 +350,18 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             "ckanext.dcat_ap_se_profile.publisher_identifier"
         )
 
-        if publisher_url and not publisher_url.endswith('/'):
-            publisher_url += '/'
+        if publisher_url and not publisher_url.endswith("/"):
+            publisher_url += "/"
 
-        if publisher_identifier and not publisher_identifier.endswith('/'):
-            publisher_identifier += '/'
+        if publisher_identifier and not publisher_identifier.endswith("/"):
+            publisher_identifier += "/"
 
         if publisher_name and publisher_url and publisher_identifier:
             # Remove all existing agents
             agents_to_remove = []
 
             for agent in self.g.subjects(RDF.type, FOAF.Agent):
-                if '/organization/' in str(agent):
+                if "/organization/" in str(agent):
                     agents_to_remove.append(agent)
 
             for agent in agents_to_remove:
@@ -293,9 +374,7 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             # Set new global publisher
             publisher_node = URIRef(publisher_identifier)
 
-            self.g.add(
-                (publisher_node, RDF.type, FOAF.Agent)
-            )
+            self.g.add((publisher_node, RDF.type, FOAF.Agent))
             self.g.add((publisher_node, FOAF.name, Literal(publisher_name)))
             self.g.add((publisher_node, FOAF.homepage, URIRef(publisher_url)))
 
@@ -310,6 +389,6 @@ class SwedishDCATAP3Profile(EuropeanDCATAP3Profile):
             (
                 catalog_ref,
                 DCTERMS.license,
-                URIRef("http://creativecommons.org/publicdomain/zero/1.0"),
+                URIRef(CATALOG_LICENSE),
             )
         )
